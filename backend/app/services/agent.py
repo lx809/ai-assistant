@@ -240,7 +240,7 @@ class AgentService:
     def _ensure_vectorstore(self) -> VectorStore:
         if self._vectorstore is None:
             persist_dir = self.settings.data_dir / "vectorstore"
-            embedder = SentenceTransformerEmbedder(self.settings.embedding_model)
+            embedder = build_embedder(self.settings)
             self._vectorstore = VectorStore(persist_dir, embedder)
         return self._vectorstore
 

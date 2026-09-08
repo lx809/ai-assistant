@@ -2,13 +2,14 @@ import hashlib
 import logging
 import re
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import chromadb
 import docx
-import torch
+import httpx
 from pypdf import PdfReader
 
 from app.config import Settings
@@ -125,10 +126,67 @@ class SentenceTransformerEmbedder:
 
 # ---------- 向量库 ----------
 
+class SiliconFlowEmbedder:
+    """硅基流动云端嵌入（OpenAI 兼容 /embeddings 接口），本地零模型零显存。"""
+
+    def __init__(self, api_key: str, model: str, base_url: str, batch_size: int = 32):
+        self.model = model
+        self.batch_size = batch_size
+        self._client = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=60.0,
+        )
+
+    # 单批次请求，429/5xx 指数退避重试
+    def _request(self, texts: list[str]) -> list[list[float]]:
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = self._client.post("/embeddings", json={"model": self.model, "input": texts})
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {resp.status_code}", request=resp.request, response=resp
+                    )
+                resp.raise_for_status()
+                data = sorted(resp.json()["data"], key=lambda item: item["index"])
+                return [item["embedding"] for item in data]
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(2**attempt)
+        raise RuntimeError(f"嵌入 API 调用失败: {last_error}")
+
+    # 对文档列表进行嵌入（自动分批）
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        start = time.perf_counter()
+        vectors: list[list[float]] = []
+        for i in range(0, len(texts), self.batch_size):
+            vectors.extend(self._request(texts[i : i + self.batch_size]))
+        logger.info("嵌入 API: 模型=%s 文本=%d 用时=%.2fs", self.model, len(texts), time.perf_counter() - start)
+        return vectors
+
+    # 对查询进行嵌入
+    def embed_query(self, text: str) -> list[float]:
+        return self._request([text])[0]
+
+
 # 嵌入器协议，定义了嵌入文档和查询的方法
 class Embedder(Protocol):
     def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
     def embed_query(self, text: str) -> list[float]: ...
+
+
+def build_embedder(settings: Settings) -> Embedder:
+    """按配置选择嵌入器：配置了硅基流动密钥则用云端 API，否则回退本地模型。"""
+    if settings.siliconflow_api_key:
+        return SiliconFlowEmbedder(
+            api_key=settings.siliconflow_api_key,
+            model=settings.embedding_model,
+            base_url=settings.embedding_api_base,
+        )
+    return SentenceTransformerEmbedder(settings.embedding_model)
+
 
 # 文档来源，包含文档ID、标题、路径、摘要、分数
 @dataclass
@@ -248,9 +306,7 @@ class Indexer:
     def _ensure_store(self) -> VectorStore:
         if self._store is None:
             persist_dir = self.settings.data_dir / "vectorstore"
-            self._store = self._vectorstore or VectorStore(
-                persist_dir, SentenceTransformerEmbedder(self.settings.embedding_model)
-            )
+            self._store = self._vectorstore or VectorStore(persist_dir, build_embedder(self.settings))
         return self._store
 
     @staticmethod

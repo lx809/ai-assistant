@@ -55,9 +55,13 @@ async def test_mcp_tools_connect_and_write(tmp_path, monkeypatch):
 
 
 
-def test_create_chat_model_enables_streaming():
+def test_create_chat_model_enables_streaming(monkeypatch):
     from app.services.agent import _create_chat_model
     from app.config import get_settings
 
+    # 不依赖宿主机环境变量中配置的真实密钥
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    get_settings.cache_clear()
     model = _create_chat_model(get_settings())
     assert getattr(model, "streaming", False) is True
+    get_settings.cache_clear()

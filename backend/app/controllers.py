@@ -86,6 +86,7 @@ def health() -> dict:
         "status": "ok",
         "deepseek_configured": bool(settings.deepseek_api_key),
         "knowledge_dir": str(settings.knowledge_dir),
+        "embedding_provider": "siliconflow" if settings.siliconflow_api_key else "local",
         "embedding_model": settings.embedding_model,
         "mcp_config_exists": settings.mcp_config_path.exists(),
     }
