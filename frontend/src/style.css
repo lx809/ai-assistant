@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --border: #e3e6ea;
+  --text: #1f2328;
+  --muted: #6b7280;
+  --accent: #2563eb;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.app-shell { height: 100vh; display: flex; flex-direction: column; }
+.topnav { display: flex; gap: 8px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.topnav button { border: 0; background: transparent; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.topnav button.active { background: var(--accent); color: white; }
+.view-placeholder { flex: 1; display: grid; place-items: center; color: var(--muted); }
